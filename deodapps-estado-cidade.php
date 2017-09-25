@@ -24,37 +24,83 @@ add_filter( 'wpcf7_validate_configuration', '__return_false' );
 function deodapps_eccf7_add_theme_scripts() {
     wp_enqueue_style( 'style', get_stylesheet_uri() );
     wp_enqueue_style( 'deodapps-style', __ROOT__ . 'css/deodapps.css', array(), '0.1', 'all');
-    wp_enqueue_script( 'deodapps-script', __ROOT__ . 'js/deodapps.js', array ( 'jquery' ), 0.1, true);
+    wp_enqueue_script( 'deodapps-script', __ROOT__ . 'js/deodapps-cf7.js', array ( 'jquery' ), 0.1, true);
+    wp_localize_script( 'deodapps_script-1', 'myAjax', array( 'ajaxurl' => admin_url( 'admin-ajax.php' )));
 }
-add_action( 'wp_enqueue_scripts', 'deodapps_eccf7_' );
+add_action( 'wp_enqueue_scripts', 'deodapps_eccf7_add_theme_scripts' );
 
+
+add_action ( 'wp_head', 'my_js_variables' );
+function my_js_variables(){ 
+ ?>
+  <script type="text/javascript">
+    var _ajaxurl = <?php echo json_encode( admin_url( "admin-ajax.php" ) ); ?>;      
+    var _ajaxnonce = <?php echo json_encode( wp_create_nonce( "itr_ajax_nonce" ) ); ?>;
+  </script>
+  <?php
+}
 
 //faz a consulta ao servico de laudos e retorna JSON...
-add_action("wp_ajax_deodapps_get_cidade", "do_get_city");
-add_action("wp_ajax_nopriv_deodapps_get_cidade", "do_get_city");
+add_action("wp_ajax_deodapps_get_cidades", "do_get_cidades");
+add_action("wp_ajax_nopriv_deodapps_get_cidades", "do_get_cidades");
 
-function do_get_city() {
+function do_get_cidades() {
     $estado = filter_input(INPUT_POST, 'estado', FILTER_SANITIZE_STRING);
     
-    $response = ['asd' => "asdasd"];
+    $cidades = [];
+    if($estado){
+      $brasil = new BrasilDB();
+      $cidades = $brasil->getCidades( strtoupper($estado) );
+    }
 
-    $json = json_encode($response);
-    echo $json;
-    exit();
+    wp_send_json($cidades);
+    wp_die();
 }
 
 // cria os campos extras
 add_action( 'wpcf7_init', 'custom_fields' );
  
 function custom_fields() {
-    wpcf7_add_form_tag( 'destado', 'get_estados', array('name-attr' => true) ); 
-    wpcf7_add_form_tag( 'dcidade', 'get_cidades', array('name-attr' => true) ); 
+    wpcf7_add_form_tag( 'destadocidade', 'get_estados_cidades', array('name-attr' => true) );
+    wpcf7_add_form_tag( 'destado', 'get_estados', array('name-attr' => true) );
+    wpcf7_add_form_tag( 'dcidade', 'get_cidades', array('name-attr' => true) );
+}
+
+function get_estados_cidades( $tag ){
+  $estados = get_estados($tag, true);
+  $cidades = get_cidades($tag, true);
+
+  $wrapper = '<div class="deodapps-estado-cidade-auto">';
+  $wrapper .= '<p class="deodapps-estado-auto">';
+  $wrapper .= $estados;
+  $wrapper .= '</p">';
+  $wrapper .= '<p class="deodapps-cidade-auto">';
+  $wrapper .= $cidades;
+  $wrapper .= '</p">';
+  $wrapper .= '</div">';
+
+  return $wrapper;
 }
  
-function get_estados( $tag ) {
+function get_estados( $tag = null, $double = false ) {
+
   $brasil = new BrasilDB();
   $estados = $brasil->getEstados();
-  $field = "<select id='deodapps-estado' class='wpcf7-form-control wpcf7-select'>";
+
+  $tag_name = "";
+  if ( $double ){
+    $tag_name_suffix = "-estado";
+  }
+  $atts = array(
+    'name' => $tag->name.$tag_name_suffix,
+    'class' => "deodapps-estado wpcf7-form-control wpcf7-select",
+  );
+
+  $field = sprintf(
+    '<select %s >',
+    wpcf7_format_atts( $atts ) 
+  );
+
   $field .= "<option value=''>Estado</option>";
   foreach ($estados as $key => $estado) {
     $field .= sprintf('<option value="%s">%s</option>',$key,$estado);
@@ -63,15 +109,30 @@ function get_estados( $tag ) {
   return $field;
 }
 
-function get_cidades( $tag ) {  
-  $field = "<select id='deodapps-cidade' class='wpcf7-form-control wpcf7-select'>";
-  $estado_base = $tag->get_option('estado','',true);
-  $field .= "<option value=''>Cidade</option>";
-  if( $estado_base ){
-    $brasil = new BrasilDB();
-    $estados = $brasil->getCidades( strtoupper($estado_base) );
-    foreach ($estados as $key => $estado) {
-      $field .= sprintf('<option value="%s">%s</option>',$key,$estado);
+function get_cidades( $tag = null , $double = false ) {  
+  $tag_name = "";
+  if ( $double ){
+    $tag_name_suffix = "-cidade";
+  }
+  $atts = array(
+    'name' => $tag->name.$tag_name_suffix,
+    'class' => "deodapps-cidade wpcf7-form-control wpcf7-select",
+  );
+
+  $field = sprintf(
+    '<select %s >',
+    wpcf7_format_atts( $atts ) 
+  );
+
+  if($tag != null){
+    $estado_base = $tag->get_option('estado','',true);
+    $field .= "<option value=''>Cidade</option>";
+    if( $estado_base ){
+      $brasil = new BrasilDB();
+      $cidades = $brasil->getCidades( strtoupper($estado_base) );
+      foreach ($cidades as $key => $cidade) {
+        $field .= sprintf('<option value="%s">%s</option>',$key,$cidade);
+      }
     }
   }
   $field .= "</select>";
